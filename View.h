@@ -26,13 +26,16 @@ public:
 	Position GetMousePosition() const;
 	bool GetLeftMousePressed() const;
 	bool GetSpacePressed() const;
-	void ShowWinnerPopup(PopupType popupType, const std::vector<std::shared_ptr<Player>> winners);
+	void ShowTurn(std::vector<Position> positions);
+	void ShowWinnerPopup(PopupType popupType, const std::vector<std::shared_ptr<Player>>& winners);
 	void HideWinnerPopup();
 	const bool GetWinnerPopupIsShow() const;
 	~View();
 private:
 	std::unique_ptr<ViewProxy> viewProxy;
 	std::unique_ptr<WinnerPopup> winnerPopup;
+
+	std::vector<Position> turnPositions;
 };
 
 enum class PopupType

@@ -12,10 +12,10 @@ void Human::Prepare(Field& field)
 
 }
 
-void Human::Turn(const View& view, Controller& controller, Field& field)
+void Human::Turn(View& view, Controller& controller, Field& field)
 {
 	Position mousePosition = view.GetMousePosition();
-
+	//ѕровер€ем находитс€ ли курсор в пределах доски
 	if ((mousePosition.x < 0) ||
 		(mousePosition.y < 0) ||
 		(mousePosition.x >= field.GetWidth() * field.GetTileSize()) ||
@@ -24,65 +24,70 @@ void Human::Turn(const View& view, Controller& controller, Field& field)
 		return;
 	}
 
+	//≈сли мышка нажата но не отжата, то происходит клик
 	if ((view.GetLeftMousePressed()) && (!mouseIsDown))
 	{
 		mouseIsDown = true;
 		mouseClick = true;
 	}
 
+	//≈сли мышка отжата, то можно кликнуть еще раз
 	if (!view.GetLeftMousePressed())
 	{
 		mouseIsDown = false;
 	}
 
+	//ѕри клике мышкой
 	if (mouseClick)
 	{
 		mouseClick = false;
-		std::shared_ptr<Tile> tile = field.GetTile(mousePosition.x / field.GetTileSize(), mousePosition.y / field.GetTileSize());
 
-		if (tile->availableForTurn)
+		std::shared_ptr<Tile> tileSelected = field.GetTile(mousePosition.x / field.GetTileSize(), mousePosition.y / field.GetTileSize());
+		std::shared_ptr<Piece> tilePice = tileSelected->piece;
+
+		//≈сли фигура выбрана и кликнули на клетку доступную дл€ хода, то ходим фигурой
+		if (pieceSelected != nullptr)
 		{
-			field.MovePiece(tile->position, pieceSelected);
-			controller.NextPlayerTurn(field);
-			isTurn = true;
+			std::vector<std::shared_ptr<Tile>> tTiles = field.GetTilesForTurn(pieceSelected->GetPosition(), false);
+			for (auto& tile : tTiles)
+			{
+				if ((tile->position.x == tileSelected->position.x) && (tile->position.y == tileSelected->position.y))
+				{
+					field.MovePiece(tile->position, pieceSelected);
+					pieceSelected = nullptr;
+					controller.NextPlayerTurn(field);
+					break;
+				}
+			}
 		}
 
-		for (auto& turnTile : turnTales)
+		//≈сли кликнули на пустую клетку или на клетку с вражеской фигурой, то очищаем выбранную фигуру
+		if ((tilePice == nullptr) || (tilePice->GetPlayerNum() != playerNum))
 		{
-			std::shared_ptr<Tile> tile = field.GetTile(turnTile->position);
-			tile->availableForTurn = false;
+			pieceSelected = nullptr;
+		}
+		//»наче записываем фигуру на клетке как выбранную
+		else
+		{
+			pieceSelected = tilePice;
 		}
 
-		if (isTurn)
+		//≈сли фигура выбрана, то записуем клетки на которые она может походить
+		std::vector<std::shared_ptr<Tile>> turnTiles;
+		if (pieceSelected != nullptr)
 		{
-			isTurn = false;
-			return;
+			turnTiles = field.GetTilesForTurn(tileSelected->position, false);
 		}
 
-		if (tile->piece == nullptr)
+		//¬ыбираем позиции клеток на которые может походить фигура
+		std::vector<Position> turnPositions;
+		for (auto& tile : turnTiles)
 		{
-			return;
+			turnPositions.push_back(tile->position);
 		}
 
-		if (tile->piece->GetPlayerNum() != playerNum)
-		{
-			return;
-		}
-
-		pieceSelected = tile->piece;
-
-		turnTales = field.GetTilesForTurn(tile->position, false);
-
-		if (turnTales.size() <= 0)
-		{
-			return;
-		}
-
-		for (auto& turnTile : turnTales)
-		{
-			std::shared_ptr<Tile> tile = field.GetTile(turnTile->position);
-			tile->availableForTurn = true;
-		}
+		//”казываем что клетки на которые может походить фигура нужно выделить на экране
+		view.ShowTurn(turnPositions);
 	}
 }
 

@@ -69,33 +69,33 @@ void Field::SetRespawnRect(int x, int y, int width, int height, int playerNum)
         }
     }
 
-    CalcRespownWeights(playerNum);
+    CalcRespownPriorities(playerNum);
 }
 
-void Field::CalcRespownWeights(int playerNum)
+void Field::CalcRespownPriorities(int playerNum)
 {
-    std::vector<std::shared_ptr<Tile>> respaunTiles = GetRespawn(playerNum);
-    for (auto& tile : respaunTiles)
+    std::vector<std::shared_ptr<Tile>> respawnTiles = GetRespawn(playerNum);
+    for (auto& tile : respawnTiles)
     {
         std::vector<std::shared_ptr<Tile>> turnTiles = GetTilesForTurn(tile->position, true);
-        int weight = 1;
+        int priority = 1;
         for (auto& turnTile : turnTiles)
         {
             if (turnTile->respawnPlayerNum == playerNum)
             {
-                weight += 9 - turnTiles.size() * 2;
+                priority += 9 - turnTiles.size() * 2;
             }
             else
             {
-                weight --;
+                priority--;
             }
         }
 
-         SetRespawnWeight(tile->position, weight);
+         SetRespawnPriority(tile->position, priority);
     }
 }
 
-const std::vector<std::shared_ptr<Tile>> Field::GetRespawn(int playerNum) const
+std::vector<std::shared_ptr<Tile>> Field::GetRespawn(int playerNum) const
 {
     std::vector<std::shared_ptr<Tile>> respawn;
 
@@ -113,7 +113,7 @@ const std::vector<std::shared_ptr<Tile>> Field::GetRespawn(int playerNum) const
     return respawn;
 }
 
-const std::vector<std::shared_ptr<Tile>> Field::GetFinishTiles(int playerNum) const
+std::vector<std::shared_ptr<Tile>> Field::GetFinishTiles(int playerNum) const
 {
     std::vector<std::shared_ptr<Tile>> finishTiles;
 
@@ -146,7 +146,7 @@ void Field::MovePiece(Position position, std::shared_ptr<Piece> piece)
     tiles[position.x][position.y]->piece->SetPosition(position);
 }
 
-const std::vector<std::shared_ptr<Tile>> Field::GetTilesForTurn(Position tilePosition, bool ignorePieces) const
+std::vector<std::shared_ptr<Tile>> Field::GetTilesForTurn(Position tilePosition, bool ignorePieces) const
 {
     std::vector<std::shared_ptr<Tile>> tilesForTurn;
 
@@ -175,7 +175,7 @@ const std::vector<std::shared_ptr<Tile>> Field::GetTilesForTurn(Position tilePos
     return tilesForTurn;
 }
 
-void Field::SetRespawnWeight(Position position, int weight)
+void Field::SetRespawnPriority(Position position, int priority)
 {
     if ((position.x < 0) || (position.y < 0) || (position.x >= width) || (position.y >= height))
     {
@@ -187,10 +187,10 @@ void Field::SetRespawnWeight(Position position, int weight)
         return;
     }
 
-    tiles[position.x][position.y]->respawnWeight = weight;
+    tiles[position.x][position.y]->respawnPriority = priority;
 }
 
-int Field::GetRespawnWeight(Position position) const
+int Field::GetRespawnPriority(Position position) const
 {
     if ((position.x < 0) || (position.y < 0) || (position.x >= width) || (position.y >= height))
     {
@@ -202,7 +202,17 @@ int Field::GetRespawnWeight(Position position) const
         return - 1;
     }
 
-    return tiles[position.x][position.y]->respawnWeight;
+    return tiles[position.x][position.y]->respawnPriority;
+}
+
+bool Field::ÑheckEnemyBaseTile(std::shared_ptr<Tile> tile, int playerNum) const
+{
+    if ((tile->respawnPlayerNum != playerNum) && (tile->respawnPlayerNum != 0))
+    {
+        return true;
+    }
+
+    return false;
 }
 
 int Field::GetWidth() const

@@ -19,7 +19,7 @@ struct ViewProxy
 	sf::Texture darkTileTex;
 	sf::Texture lightPieceTex;
 	sf::Texture darkPieceTex;
-	sf::Texture squareTex;
+	sf::Texture turnTex;
 	sf::Texture popupWinTex;
 	sf::Texture popupDrawTex;
 
@@ -27,7 +27,7 @@ struct ViewProxy
 	sf::Sprite darkTile;
 	sf::Sprite lightPiece;
 	sf::Sprite darkPiece;
-	sf::Sprite square;
+	sf::Sprite turn;
 	sf::Sprite popupWin;
 	sf::Sprite popupDraw;
 
@@ -41,7 +41,7 @@ View::View() : viewProxy{ std::make_unique<ViewProxy>() }, winnerPopup{ std::mak
 
 bool View::LoadResources()
 {
-	//load textures
+	//Загружаем текстуры из файлов
 	if (!viewProxy->lightTileTex.loadFromFile("images/light_tile.png"))
 	{
 		return false;
@@ -62,7 +62,7 @@ bool View::LoadResources()
 		return false;
 	}
 
-	if (!viewProxy->squareTex.loadFromFile("images/square.png"))
+	if (!viewProxy->turnTex.loadFromFile("images/turn.png"))
 	{
 		return false;
 	}
@@ -77,12 +77,12 @@ bool View::LoadResources()
 		return false;
 	}
 
-	//create sprites
+	//Создаем спрайты
 	viewProxy->lightTile.setTexture(viewProxy->lightTileTex);
 	viewProxy->darkTile.setTexture(viewProxy->darkTileTex);
 	viewProxy->lightPiece.setTexture(viewProxy->lightPieceTex);
 	viewProxy->darkPiece.setTexture(viewProxy->darkPieceTex);
-	viewProxy->square.setTexture(viewProxy->squareTex);
+	viewProxy->turn.setTexture(viewProxy->turnTex);
 	viewProxy->popupWin.setTexture(viewProxy->popupWinTex);
 	viewProxy->popupDraw.setTexture(viewProxy->popupDrawTex);
 
@@ -103,7 +103,7 @@ void View::Draw(const Field& field, const std::vector<std::shared_ptr<Player>>& 
 {
 	viewProxy->window->clear();
 
-	//draw field
+	//Рисуем поле
 	for (int i = 0; i < field.GetWidth(); i++)
 	{
 		for (int j = 0; j < field.GetHeight(); j++)
@@ -116,17 +116,20 @@ void View::Draw(const Field& field, const std::vector<std::shared_ptr<Player>>& 
 			sprite.setPosition(float(x), float(y));
 
 			viewProxy->window->draw(sprite);
-
-			if (field.GetTile(position)->availableForTurn)
-			{
-				auto& square = viewProxy->square;
-				square.setPosition(float(x), float(y));
-				viewProxy->window->draw(square);
-			}
 		}
 	}
 
-	//draw piecess
+	//Рисуем выделения для клеток
+	for (auto& position : turnPositions)
+	{
+		int x = position.x * field.GetTileSize();
+		int y = position.y * field.GetTileSize();
+		auto& sprite = viewProxy->turn;
+		sprite.setPosition(float(x), float(y));
+		viewProxy->window->draw(sprite);
+	}
+
+	//Рисуем фигуры
 	for (auto& player : players)
 	{
 		for (int i = 0; i < player->GetPiecesCount(); i++)
@@ -143,6 +146,7 @@ void View::Draw(const Field& field, const std::vector<std::shared_ptr<Player>>& 
 		}
 	}
 
+	//Рисуем всплывающее окно
 	if (winnerPopup->isShow)
 	{
 		auto& background = winnerPopup->type == PopupType::DRAW ? viewProxy->popupDraw : viewProxy->popupWin;
@@ -192,7 +196,12 @@ bool View::GetSpacePressed() const
 	return sf::Keyboard::isKeyPressed(sf::Keyboard::Space);
 }
 
-void View::ShowWinnerPopup(PopupType popupType, const std::vector<std::shared_ptr<Player>> winners)
+void View::ShowTurn(std::vector<Position> positions)
+{
+	turnPositions = positions;
+}
+
+void View::ShowWinnerPopup(PopupType popupType, const std::vector<std::shared_ptr<Player>>& winners)
 {
 	winnerPopup->type = popupType;
 	winnerPopup->shades.clear();

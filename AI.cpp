@@ -14,167 +14,202 @@ void AI::Prepare(Field& field)
 
 }
 
-void AI::Turn(const View& view, Controller& controller, Field& field)
+void AI::Turn(View& view, Controller& controller, Field& field)
 {
-	std::shared_ptr<Piece> bestPiece;
+	std::shared_ptr<PositionPriority> bestTurn;
 
 	//Проверяем есть ли фигура рядом со свободной клеткой базы противника, если есть выбираем ее для хода
-	bestPiece = GetPiceNearFinishTiles(field);
+	bestTurn = GetPieceNearFinishTiles(field);
 
 	//Если фигура для хода не найдена
-	if (bestPiece == nullptr)
+	if (bestTurn == nullptr)
 	{
-		//Проверяем есть ли своя фигура которая может ходить на базе противника, если есть выбираем ее для хода 
-		//Это нужно для того чтобы упорядочить свои фигуры на базе противника
-		bestPiece = GetPiceToMoveOnFinishTiles(field);
+		//Проверяем есть ли фигура которая может ходить на базе противника, если есть выбираем ее для хода 
+		//Это нужно для того чтобы упорядочить фигуры на базе противника
+		bestTurn = GetPieceToMoveOnFinishTiles(field);
 	}
 
 	//Если фигура для хода не найдена
-	if (bestPiece == nullptr)
+	if (bestTurn == nullptr)
 	{
-		//Подготавливаем веса для всех ходов
-		PreparePiecesTurnWeights(field);
+		//Очищаем список возможных ходов
+		ClearPositionPriorities();
 
-		//Собираем все ходы всех фигур в массив
-		std::vector<PositionWeight> positionWeights;
 		for (auto& piece : pieces)
 		{
+			//Проверяем что фигура находится не на базе противника
 			std::shared_ptr<Tile> pieceTile = field.GetTile(piece->GetPosition());
-			if ((pieceTile->respawnPlayerNum != playerNum) && (pieceTile->respawnPlayerNum != 0))
+			if (field.СheckEnemyBaseTile(pieceTile, playerNum))
 			{
 				continue;
 			}
 
-			std::vector<PositionWeight> weights = piece->GetPositionWeights();
-			if (weights.size() == 0)
-			{
-				continue;
-			}
-
-			for (auto& weight : weights)
-			{
-				weight.piece = piece;
-				positionWeights.push_back(weight);
-			}
+			//Выставляем приоритет ходам с наименьшим путем до базы противника и добавляем в список возможных ходов
+			//(путь просчитывается без учета других фигур)
+			std::vector<std::shared_ptr<PositionPriority>> turnTilesPathIgnorePieces = GetTurnTilesPath(field, piece, true);
+			CalcAndPushTurnTilesPriority(turnTilesPathIgnorePieces, false);
+			//Выставляем приоритет ходам с наименьшим путем до базы противника и добавляем в список возможных ходов
+			//(путь просчитывается с учетом других фигур)
+			std::vector<std::shared_ptr<PositionPriority>> turnTilesPathNotIgnorePieces = GetTurnTilesPath(field, piece, false);
+			CalcAndPushTurnTilesPriority(turnTilesPathNotIgnorePieces, true);
 		}
 
-		//Перемешиваем массив ходов
-		unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
-		std::shuffle(std::begin(positionWeights), std::end(positionWeights), std::default_random_engine(seed));
+		//Перемешиваем список возможных ходов и сортируем ходы по приоритету
+		SortPositionPriorities();
 
-		//Сортируем ходы в массиве по весу
-		std::sort(positionWeights.begin(), positionWeights.end(), [](const auto& a, const auto& b) {return a.weight < b.weight; });
-
-		//Выбираем первый возможный ход с наименьшим весом
-		for (auto& positionWeight : positionWeights)
-		{
-			std::shared_ptr<Tile> tile = field.GetTile(positionWeight.position);
-			if (tile->piece != nullptr)
-			{
-				continue;
-			}
-
-			Position oldPosition = positionWeight.piece->GetOldPosition();
-			if ((positionWeight.position.x == oldPosition.x) && (positionWeight.position.y == oldPosition.y))
-			{
-				continue;
-			}
-
-			bestPiece = positionWeight.piece;
-			bestPiece->SetAiPositionToMove(positionWeight.position);
-			break;
-		}
+		//Первый возможный ход из списка ходов записываем как лучший
+		bestTurn = GetBestTurn(field);
 	}
 
 	//Ходим
-	if (bestPiece != nullptr)
-	{
-		field.MovePiece(bestPiece->GetAiPositionToMove(), bestPiece);
-	}
+	field.MovePiece(bestTurn->position, bestTurn->piece);
 
 	//Передаем ход следующему игроку
 	controller.NextPlayerTurn(field);
 }
 
-void AI::PreparePiecesTurnWeights(Field& field)
+std::vector<std::shared_ptr<PositionPriority>> AI::GetTurnTilesPath(Field& field, std::shared_ptr<Piece> piece, bool ignorePieces)
 {
-	//Для каждой своей фигуры рассчитываем вес каждого хода
-	for (auto& piece : pieces)
-	{
-		//Рассчитываем веса ходов игнорируя фигуры на поле
-		CalcPiecesTurnWeights(field, piece, true);
-		//Рассчитываем веса ходов учитывая фигуры на поле
-		//Эти ходы необходимо в тех случаях, когда другие фигуры мешают сделать ход по ближайшему пути
-		CalcPiecesTurnWeights(field, piece, false);
-	}
-}
-
-void AI::CalcPiecesTurnWeights(Field& field, std::shared_ptr<Piece> piece, bool ignorePieces)
-{
-	std::vector<Position> positions;
-	std::vector<int> stepCounts;
-
-	//Сохраняем длинну пути до базы противника каждой соседней клетки фигуры
 	std::vector<std::shared_ptr<Tile>> turnTiles = field.GetTilesForTurn(piece->GetPosition(), true);
+	std::vector<std::shared_ptr<PositionPriority>> piecePositionPriorities;
+
+	//Находим клетки на которые может походить фигура
 	for (auto& turnTale : turnTiles)
 	{
 		std::vector<Position> path = GetBestPath(turnTale->position, field, ignorePieces);
 
-		positions.push_back(turnTale->position);
-		stepCounts.push_back(path.size());
-	}
-
-	//Считаем вес каждого возможного хода для фигуры, в зависимости от длинны пути до базы противника
-	piece->CalcTurnWeights(field, positions, stepCounts, ignorePieces);
-}
-
-std::shared_ptr<Piece> AI::GetPiceNearFinishTiles(Field& field)
-{
-	std::shared_ptr<Piece> bestPiece;
-
-	for (auto& piece : pieces)
-	{
-		//Если фигура не находится на базе противника
-		std::shared_ptr<Tile> pieceTile = field.GetTile(piece->GetPosition());
-		if ((pieceTile->respawnPlayerNum != 0) && (pieceTile->respawnPlayerNum != playerNum))
+		//Если пути нет, то переходим к следующей клетке
+		if (path.size() == 0)
 		{
 			continue;
 		}
 
-		//Ищем клетку рядом с фигурой, на которой появилась фигура противника
+		//Записываем клетку как возможную для хода
+		piecePositionPriorities.push_back(std::make_shared<PositionPriority>(piece, turnTale->position, int (path.size())));
+	}
+
+	return piecePositionPriorities;
+}
+
+void AI::CalcAndPushTurnTilesPriority(std::vector<std::shared_ptr<PositionPriority>>& turnTilesPath, bool startFromOne)
+{
+	int oldStepCount = 0;
+	int priority = 0;
+
+	//При расчете приоритета хода, с обходом других фигур, нужно начинать считать приоритет с единицы
+	if (startFromOne)
+	{
+		priority = 1;
+	}
+
+	//Сортируем все возможные ходы фигуры по количеству шагов до базы противника
+	std::sort(turnTilesPath.begin(), turnTilesPath.end(), [](const auto& a, const auto& b) {return a->stepCounts < b->stepCounts; });
+
+	//Присваиваем всем возможным ходам фигуры приоритет, в зависимости от количества шагов до базы противника
+	for (auto& positionPriority : turnTilesPath)
+	{
+		if (oldStepCount != positionPriority->stepCounts)
+		{
+			oldStepCount = positionPriority->stepCounts;
+			priority += 2;
+		}
+		//Записываем приоритет для хода и добавляем его в список возможных ходов
+		positionPriority->priority = priority;
+		positionPriorities.push_back(positionPriority);
+	}
+}
+
+void AI::ClearPositionPriorities()
+{
+	//Очищаем список возможных ходов
+	positionPriorities.clear();
+}
+
+void AI::SortPositionPriorities()
+{
+	//Перемешиваем список ходов
+	auto seed = unsigned int(std::chrono::system_clock::now().time_since_epoch().count());
+	std::shuffle(std::begin(positionPriorities), std::end(positionPriorities), std::default_random_engine(seed));
+
+	//Сортируем все возможные ходы всех фигур по приоритету
+	std::sort(positionPriorities.begin(), positionPriorities.end(), [](const auto& a, const auto& b) {return a->priority < b->priority; });
+}
+
+std::shared_ptr<PositionPriority> AI::GetBestTurn(Field& field) const
+{
+	std::shared_ptr<PositionPriority> bestTurn;
+
+	//Определяем лучший ход
+	for (auto& positionPriority : positionPriorities)
+	{
+		//Если на клетке для хода находится фигура, то переходим к проверке следующего хода
+		std::shared_ptr<Tile> tile = field.GetTile(positionPriority->position);
+		if (tile->piece != nullptr)
+		{
+			continue;
+		}
+
+		//Если фигура была на этой клетке на прошлом ходу, то переходим к проверке следующего хода
+		Position oldPosition = positionPriority->piece->GetOldPosition();
+		if ((positionPriority->position.x == oldPosition.x) && (positionPriority->position.y == oldPosition.y))
+		{
+			continue;
+		}
+
+		//Записываем текущий ход как лучший
+		bestTurn = positionPriority;
+		break;
+	}
+
+	return bestTurn;
+}
+
+std::shared_ptr<PositionPriority> AI::GetPieceNearFinishTiles(Field& field) const
+{
+	std::shared_ptr<PositionPriority> bestTurn;
+
+	for (auto& piece : pieces)
+	{
+		//Если фигура находится на базе противника, то переходим к следующей фигуре
+		std::shared_ptr<Tile> pieceTile = field.GetTile(piece->GetPosition());
+		if (field.СheckEnemyBaseTile(pieceTile, playerNum))
+		{
+			continue;
+		}
+
+		//Ищем клетку базы противника рядом с фигурой
 		std::vector<std::shared_ptr<Tile>> turnTiles = field.GetTilesForTurn(piece->GetPosition(), false);
 		for (auto& turnTile : turnTiles)
 		{
-			if ((turnTile->respawnPlayerNum != 0) && (turnTile->respawnPlayerNum != playerNum))
+			if (field.СheckEnemyBaseTile(turnTile, playerNum))
 			{
-				bestPiece = piece;
-				bestPiece->SetAiPositionToMove(turnTile->position);
+				bestTurn = std::make_shared<PositionPriority>(piece, turnTile->position);
 				break;
 			}
 		}
 	}
 
-	return bestPiece;
+	return bestTurn;
 }
 
-std::shared_ptr<Piece> AI::GetPiceToMoveOnFinishTiles(Field& field) const
+std::shared_ptr<PositionPriority> AI::GetPieceToMoveOnFinishTiles(Field& field) const
 {
-	std::shared_ptr<Piece> bestPiece;
+	std::shared_ptr<PositionPriority> bestTurn;
 
 	for (auto& piece : pieces)
 	{
-		//Если фигура находится на базе противника то переходим к следующей фигуре
+		//Если фигура находится не на базе противника то переходим к следующей фигуре
 		std::shared_ptr<Tile> tile = field.GetTile(piece->GetPosition());
-		if ((tile->respawnPlayerNum == 0) || (tile->respawnPlayerNum == playerNum))
+		if (!field.СheckEnemyBaseTile(tile, playerNum))
 		{
 			continue;
 		}
 
-		//Сохраняем вес клетки под фигурой
-		int currentRespawnWeight = tile->respawnWeight;
+		//Сохраняем приоритет клетки под фигурой
+		int currentRespawnPriority = tile->respawnPriority;
 
 		std::vector<std::shared_ptr<Tile>> turnTiles = field.GetTilesForTurn(piece->GetPosition(), true);
-		//Сравниваем веса соседних клеток с той на которой находится фигура
+		//Сравниваем приоритеты соседних клеток с той на которой находится фигура
 		for (auto& turnTile : turnTiles)
 		{
 			//Если соседняя клетка не пустая переходим к следующей клетке 
@@ -183,45 +218,48 @@ std::shared_ptr<Piece> AI::GetPiceToMoveOnFinishTiles(Field& field) const
 				continue;
 			}
 
-			//Если вес клетки больше чем тот что у клетки под фигурой запоминаем фигуру и позицию клетки для хода
-			if (turnTile->respawnWeight > currentRespawnWeight)
+			//Если приоритет клетки выше чем тот что у клетки под фигурой запоминаем фигуру и позицию клетки для хода
+			if (turnTile->respawnPriority > currentRespawnPriority)
 			{
-				bestPiece = piece;
-				bestPiece->SetAiPositionToMove(turnTile->position);
+				bestTurn = std::make_shared<PositionPriority>(piece, turnTile->position);
 				continue;
 			}
 		}
 	}
 
-	return bestPiece;
+	return bestTurn;
 }
 
-std::vector<Position> AI::GetBestPath(Position position, Field& field, bool ignorePieces)
+std::vector<Position> AI::GetBestPath(Position position, Field& field, bool ignorePieces) const
 {
 	std::vector<Position> bestPath;
 	std::vector<std::shared_ptr<Tile>> finishTiles = field.GetFinishTiles(playerNum);
-	std::sort(finishTiles.begin(), finishTiles.end(), [](const auto& a, const auto& b) {return a->respawnWeight < b->respawnWeight; });
+	std::sort(finishTiles.begin(), finishTiles.end(), [](const auto& a, const auto& b) {return a->respawnPriority < b->respawnPriority; });
 
-	int stepCount = std::numeric_limits<int>::max();
+	size_t stepCount = size_t (std::numeric_limits<int>::max());
 	//Расчитываем длину пути до каждой клетки базы противника и выбираем ближайший путь
 	for (auto& tile : finishTiles)
 	{
+		//Если на клетке стоит своя фигура, переходим к следующей клетке
 		if ((tile->piece != nullptr) && (tile->piece->GetPlayerNum() == playerNum))
 		{
 			continue;
 		}
 
 		std::vector<Position> path = GetPath(position, tile->position, field, ignorePieces);
-		if (path.size() > stepCount)
-		{
-			continue;
-		}
-
+		//Если путь до клетки не найден, переходим к следующей клетке
 		if (path.size() == 0)
 		{
 			continue;
 		}
 
+		//Если путь до клетки не короче чем у предидущих клеток, переходим к следующей клетке
+		if (path.size() > stepCount)
+		{
+			continue;
+		}
+
+		//Записываем путь как наилучший
 		stepCount = path.size();
 		bestPath = path;
 	}
@@ -229,7 +267,7 @@ std::vector<Position> AI::GetBestPath(Position position, Field& field, bool igno
 	return bestPath;
 }
 
-std::vector<Position> AI::GetPath(Position startPosition, Position endPosition, Field& field, bool ignorePieces)
+std::vector<Position> AI::GetPath(Position startPosition, Position endPosition, Field& field, bool ignorePieces) const
 {
 	const int width = field.GetWidth();
 	const int height = field.GetHeight();
@@ -342,7 +380,7 @@ std::vector<Position> AI::GetPath(Position startPosition, Position endPosition, 
 		result = false;
 	}
 
-	//Если путь найден, записываем его в вектор
+	//Если путь найден, записываем его
 	if (result) 
 	{
 		int _i = endPosition.x, _j = endPosition.y;
@@ -357,7 +395,6 @@ std::vector<Position> AI::GetPath(Position startPosition, Position endPosition, 
 		}
 	}
 
-	//Возвращаем путь
 	return path;
 }
 

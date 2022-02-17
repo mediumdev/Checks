@@ -5,7 +5,6 @@
 #include "Human.h"
 #include "AI.h"
 #include "View.h"
-#include "windows.h"
 
 enum class PopupType;
 
@@ -19,9 +18,8 @@ void Controller::StartNewGame(Field& field)
 	winners.clear();
 
 	players.clear();
-	players.reserve(2);
-	players.emplace_back(std::make_shared<AI>(1, Shade::LIGHT));
-	players.emplace_back(std::make_shared<AI>(2, Shade::DARK));
+	players.push_back(std::make_shared<Human>(1, Shade::LIGHT));
+	players.push_back(std::make_shared<AI>(2, Shade::DARK));
 
 	field.Clear();
 	field.SetRespawnRect(5, 5, 3, 3, 1);
@@ -95,19 +93,11 @@ void Controller::CheckWinner(Field& field)
 
 	for (auto& player : players)
 	{
-		player->CheckBaseIsFull(field);
-		if (player->GetBaseIsFull())
+		if (player->CheckBaseIsFull(field))
 		{
 			winners.push_back(player);
 		}
 	}
-
-	std::string message = "";
-	message += std::to_string(players.size());
-	message += ", ";
-	message += std::to_string(winners.size());
-	message += "\n";
-	OutputDebugStringA(message.c_str());
 }
 
 Controller::~Controller()

@@ -2,7 +2,7 @@
 
 Player::Player(int playerNum, Shade shade) : playerNum(playerNum), shade(shade)
 {
-	piecesCount = 0;
+
 }
 
 Shade Player::GetShade() const
@@ -18,7 +18,6 @@ int Player::GetPlayerNum() const
 std::shared_ptr<Piece> Player::AddPiece(Position position)
 {
 	pieces.push_back(std::make_shared<Piece>(shade, position, playerNum));
-	piecesCount = pieces.size();
 	return pieces.back();
 }
 
@@ -33,7 +32,7 @@ std::shared_ptr<Piece> Player::GetPiece(int index) const
 
 int Player::GetPiecesCount() const
 {
-	return piecesCount;
+	return pieces.size();
 }
 
 void Player::ClearPieces()
@@ -41,11 +40,11 @@ void Player::ClearPieces()
 	pieces.clear();
 }
 
-void Player::CheckBaseIsFull(Field& field)
+bool Player::CheckBaseIsFull(Field& field)
 {
 	std::vector<std::shared_ptr<Tile>> finishTiles = field.GetFinishTiles(playerNum);
 	int finishTileCount = finishTiles.size();
-	int frendlyPiecesCount = 0;
+	int friendlyPiecesCount = 0;
 	int enemyPiecesCount = 0;
 
 	for (auto& finishTile : finishTiles)
@@ -57,7 +56,7 @@ void Player::CheckBaseIsFull(Field& field)
 
 		if (finishTile->piece->GetPlayerNum() == playerNum)
 		{
-			frendlyPiecesCount++;
+			friendlyPiecesCount++;
 		}
 		else
 		{
@@ -69,10 +68,12 @@ void Player::CheckBaseIsFull(Field& field)
 		}
 	}
 
-	if (frendlyPiecesCount + enemyPiecesCount == finishTiles.size())
+	if (friendlyPiecesCount + enemyPiecesCount == finishTiles.size())
 	{
-		baseIsFull = true;
+		return true;
 	}
+
+	return false;
 }
 
 bool Player::GetBaseIsFull() const
@@ -87,7 +88,7 @@ void Player::Prepare(Field& field)
 
 }
 
-void Player::Turn(const View& view, Controller& controller, Field& field)
+void Player::Turn(View& view, Controller& controller, Field& field)
 {
 
 }
